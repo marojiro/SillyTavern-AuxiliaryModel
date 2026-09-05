@@ -21,10 +21,6 @@
     width: 100%;
 }
 
-#auxiliary_model_drawer .range-block-title {
-    font-weight: normal;
-}
-
 #auxiliary_model_drawer .auxiliary-model-key-row > input {
     min-width: 0;
 }

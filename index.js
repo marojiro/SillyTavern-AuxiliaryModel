@@ -7,6 +7,7 @@ import {
     saveSettingsDebounced,
 } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
+import { toggleDrawer } from '../../../utils.js';
 import {
     chat_completion_sources,
     oai_settings,
@@ -146,10 +147,7 @@ function createElement(tagName, { id = '', classNames = [], text = '', attribute
 }
 
 function createFieldTitle(text) {
-    return createElement('div', {
-        classNames: ['range-block-title', 'justifyLeft'],
-        text,
-    });
+    return createElement('h4', { text });
 }
 
 function createFieldBlock(title, ...children) {
@@ -903,18 +901,14 @@ function createDrawer() {
 
     const header = createElement('div', {
         classNames: ['inline-drawer-toggle', 'inline-drawer-header'],
-        text: 'Auxiliary Model',
     });
     const drawerIcon = createElement('div', {
         classNames: ['fa-solid', 'fa-circle-chevron-down', 'inline-drawer-icon', 'down'],
     });
-    header.append(drawerIcon);
+    header.append(createElement('b', { text: 'Auxiliary Model' }), drawerIcon);
     drawer.append(header);
 
     const content = createElement('div', { classNames: ['inline-drawer-content'] });
-    if (!settings.drawerOpen) {
-        content.style.display = 'none';
-    }
 
     const grid = createElement('div', { classNames: ['auxiliary-model-grid'] });
     content.append(grid);
@@ -970,16 +964,11 @@ function createDrawer() {
     drawer.append(content);
     insertionAnchorDrawer.insertAdjacentElement('beforebegin', drawer);
 
-    if (!settings.drawerOpen) {
-        drawerIcon.classList.remove('down', 'fa-circle-chevron-down');
-        drawerIcon.classList.add('up', 'fa-circle-chevron-up');
-    }
-
-    drawer.addEventListener('inline-drawer-toggle', () => {
-        setTimeout(() => {
-            settings.drawerOpen = drawerIcon.classList.contains('down');
-            saveSettings();
-        }, 0);
+    toggleDrawer(drawer, settings.drawerOpen);
+    // Native drawer clicks emit a jQuery event, while toggleDrawer emits a DOM event.
+    globalThis.jQuery(drawer).on('inline-drawer-toggle', () => {
+        settings.drawerOpen = drawerIcon.classList.contains('up');
+        saveSettings();
     });
 
     document.addEventListener('click', onDocumentClick, { capture: true });
