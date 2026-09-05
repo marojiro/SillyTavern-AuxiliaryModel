@@ -159,11 +159,16 @@ function createFieldBlock(title, ...children) {
 }
 
 function createIconButton(id, iconClass, title) {
-    return createElement('button', {
+    const button = createElement('button', {
         id,
-        classNames: ['menu_button', 'fa-solid', iconClass],
+        classNames: ['menu_button', 'auxiliary-model-icon-button'],
         attributes: { title, type: 'button', 'aria-label': title },
     });
+    button.append(createElement('i', {
+        classNames: ['fa-solid', iconClass],
+        attributes: { 'aria-hidden': 'true' },
+    }));
+    return button;
 }
 
 function createTextInput({ id, classNames = [], placeholder = '', list = '' } = {}) {
@@ -583,18 +588,34 @@ function updateKeyStatus() {
     }
 
     const saved = Boolean(syncSavedSecret());
+    const value = cleanString(input.value);
+    const invalid = input.value.length > 0 && !value;
     input.placeholder = saved ? getSavedKeyStatusText() : 'API Key';
-    saveButton?.classList.toggle('fa-check', saved);
-    saveButton?.classList.toggle('fa-save', !saved);
-    if (saveButton) {
-        saveButton.title = saved ? 'API key saved' : 'Save API key';
-        saveButton.setAttribute('aria-label', saveButton.title);
+    input.setCustomValidity(invalid ? 'Enter a valid API key.' : '');
+    if (!saveButton) return;
+
+    let iconClass = saved ? 'fa-check' : 'fa-save';
+    let title = saved ? 'API key saved' : 'Save API key';
+    if (value) {
+        iconClass = saved ? 'fa-rotate' : 'fa-save';
+        title = saved ? 'Update API key' : 'Save API key';
     }
+    if (invalid) title = 'Enter a valid API key';
+    if (savingKey) {
+        iconClass = 'fa-spinner fa-spin';
+        title = 'Saving API key';
+    }
+
+    const icon = saveButton.querySelector('i');
+    if (icon) icon.className = `fa-solid ${iconClass}`;
+    saveButton.title = title;
+    saveButton.setAttribute('aria-label', title);
+    saveButton.setAttribute('aria-busy', String(savingKey));
+    saveButton.disabled = savingKey || !value || !getSecretKey();
 }
 
 async function saveKeyFromInput() {
     const input = document.getElementById('auxiliary_model_api_key');
-    const button = document.getElementById('auxiliary_model_save_key');
     const source = settings.source;
     const value = cleanString(input?.value);
     const secretKey = getSecretKey(source);
@@ -604,7 +625,7 @@ async function saveKeyFromInput() {
     const restorableSecretId = getRestorableSecretId(secretKey, previousAuxId);
     const secretLabel = buildAuxiliarySecretLabel(source);
     savingKey = true;
-    if (button) button.disabled = true;
+    updateKeyStatus();
     try {
         const id = cleanString(await writeSecret(secretKey, value, secretLabel));
         if (!id) throw new Error('Could not save the auxiliary API key.');
@@ -630,7 +651,6 @@ async function saveKeyFromInput() {
         notifyAuxiliaryError(error instanceof Error ? error.message : 'Could not save the auxiliary API key.');
     } finally {
         savingKey = false;
-        if (button) button.disabled = false;
         invalidateModelRequests();
         updateKeyStatus();
         populateModelControl();
@@ -987,9 +1007,10 @@ function createDrawer() {
         }
     });
 
+    keyInput.addEventListener('input', updateKeyStatus);
     keyInput.addEventListener('blur', updateKeyStatus);
     keyInput.addEventListener('keydown', async (event) => {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' && !event.isComposing) {
             event.preventDefault();
             await saveKeyFromInput();
         }

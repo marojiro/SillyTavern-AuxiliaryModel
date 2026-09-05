@@ -24,3 +24,22 @@
 #auxiliary_model_drawer .range-block-title {
     font-weight: normal;
 }
+
+#auxiliary_model_drawer .auxiliary-model-key-row > input {
+    min-width: 0;
+}
+
+#auxiliary_model_drawer .auxiliary-model-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-width: 2em;
+    min-height: 2em;
+    margin: 0;
+}
+
+#auxiliary_model_drawer .auxiliary-model-icon-button:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
