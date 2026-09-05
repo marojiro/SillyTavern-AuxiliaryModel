@@ -1,0 +1,8 @@
+{
+    "name": "sillytavern-auxiliary-model",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "check": "node --check index.js && node --check validation.js"
+    }
+}

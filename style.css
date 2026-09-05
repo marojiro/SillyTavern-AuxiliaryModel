@@ -24,8 +24,3 @@
 #auxiliary_model_drawer .range-block-title {
     font-weight: normal;
 }
-
-#auxiliary_model_model_id,
-#auxiliary_model_available_models {
-    width: 100%;
-}

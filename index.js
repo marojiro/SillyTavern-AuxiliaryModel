@@ -1,10 +1,10 @@
+import { cleanString, isRecord, normalizeModels, normalizeCustomBaseUrl, normalizeProvider } from './validation.js';
 import {
     event_types,
     eventSource,
     getRequestHeaders,
     main_api,
     saveSettingsDebounced,
-    substituteParams,
 } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import {
@@ -33,87 +33,42 @@ const OVERRIDE_RESTORE_TIMEOUT_MS = 10000;
 const MAIN_REPLY_GUARD_TIMEOUT_MS = 300000;
 const AUXILIARY_SECRET_LABEL_PREFIX = 'Auxiliary Model - ';
 const CONNECT_REFRESH_SETTLE_DELAY_MS = 250;
-const STATUS_SUPPORTED_SOURCES = new Set([
-    chat_completion_sources.OPENAI,
-    chat_completion_sources.OPENROUTER,
-    chat_completion_sources.MISTRALAI,
-    chat_completion_sources.CUSTOM,
-    chat_completion_sources.COHERE,
-    chat_completion_sources.CHUTES,
-    chat_completion_sources.ELECTRONHUB,
-    chat_completion_sources.NANOGPT,
-    chat_completion_sources.DEEPSEEK,
-    chat_completion_sources.XAI,
-    chat_completion_sources.AIMLAPI,
-    chat_completion_sources.POLLINATIONS,
-    chat_completion_sources.GROQ,
-    chat_completion_sources.MOONSHOT,
-    chat_completion_sources.FIREWORKS,
-    chat_completion_sources.MAKERSUITE,
-    chat_completion_sources.AZURE_OPENAI,
-    chat_completion_sources.SILICONFLOW,
-    chat_completion_sources.WORKERS_AI,
-]);
+const MODEL_FETCH_TIMEOUT_MS = 30000;
+const PROVIDERS = new Map([
+    ['OPENAI', 'openai_model', true],
+    ['CLAUDE', 'claude_model', false],
+    ['OPENROUTER', 'openrouter_model', true],
+    ['AI21', 'ai21_model', false],
+    ['MAKERSUITE', 'google_model', true],
+    ['VERTEXAI', 'vertexai_model', false],
+    ['MISTRALAI', 'mistralai_model', true],
+    ['CUSTOM', 'custom_model', true],
+    ['COHERE', 'cohere_model', true],
+    ['PERPLEXITY', 'perplexity_model', false],
+    ['GROQ', 'groq_model', true],
+    ['SILICONFLOW', 'siliconflow_model', true],
+    ['MINIMAX', 'minimax_model', false],
+    ['ELECTRONHUB', 'electronhub_model', true],
+    ['CHUTES', 'chutes_model', true],
+    ['NANOGPT', 'nanogpt_model', true],
+    ['DEEPSEEK', 'deepseek_model', true],
+    ['AIMLAPI', 'aimlapi_model', true],
+    ['XAI', 'xai_model', true],
+    ['POLLINATIONS', 'pollinations_model', true],
+    ['MOONSHOT', 'moonshot_model', true],
+    ['FIREWORKS', 'fireworks_model', true],
+    ['COMETAPI', 'cometapi_model', false],
+    ['AZURE_OPENAI', 'azure_openai_model', true],
+    ['ZAI', 'zai_model', false],
+    ['WORKERS_AI', 'workers_ai_model', true],
+].flatMap(([key, modelSetting, supportsStatus]) => {
+    const source = chat_completion_sources[key];
+    return typeof source === 'string' && source
+        ? [[source, { modelSetting, secretKey: SECRET_KEYS[key], supportsStatus }]]
+        : [];
+}));
 
-const MODEL_SETTING_BY_SOURCE = {
-    [chat_completion_sources.OPENAI]: 'openai_model',
-    [chat_completion_sources.CLAUDE]: 'claude_model',
-    [chat_completion_sources.OPENROUTER]: 'openrouter_model',
-    [chat_completion_sources.AI21]: 'ai21_model',
-    [chat_completion_sources.MAKERSUITE]: 'google_model',
-    [chat_completion_sources.VERTEXAI]: 'vertexai_model',
-    [chat_completion_sources.MISTRALAI]: 'mistralai_model',
-    [chat_completion_sources.CUSTOM]: 'custom_model',
-    [chat_completion_sources.COHERE]: 'cohere_model',
-    [chat_completion_sources.PERPLEXITY]: 'perplexity_model',
-    [chat_completion_sources.GROQ]: 'groq_model',
-    [chat_completion_sources.SILICONFLOW]: 'siliconflow_model',
-    [chat_completion_sources.MINIMAX]: 'minimax_model',
-    [chat_completion_sources.ELECTRONHUB]: 'electronhub_model',
-    [chat_completion_sources.CHUTES]: 'chutes_model',
-    [chat_completion_sources.NANOGPT]: 'nanogpt_model',
-    [chat_completion_sources.DEEPSEEK]: 'deepseek_model',
-    [chat_completion_sources.AIMLAPI]: 'aimlapi_model',
-    [chat_completion_sources.XAI]: 'xai_model',
-    [chat_completion_sources.POLLINATIONS]: 'pollinations_model',
-    [chat_completion_sources.MOONSHOT]: 'moonshot_model',
-    [chat_completion_sources.FIREWORKS]: 'fireworks_model',
-    [chat_completion_sources.COMETAPI]: 'cometapi_model',
-    [chat_completion_sources.AZURE_OPENAI]: 'azure_openai_model',
-    [chat_completion_sources.ZAI]: 'zai_model',
-    [chat_completion_sources.WORKERS_AI]: 'workers_ai_model',
-};
-
-const SECRET_KEY_BY_SOURCE = {
-    [chat_completion_sources.OPENAI]: SECRET_KEYS.OPENAI,
-    [chat_completion_sources.CLAUDE]: SECRET_KEYS.CLAUDE,
-    [chat_completion_sources.OPENROUTER]: SECRET_KEYS.OPENROUTER,
-    [chat_completion_sources.AI21]: SECRET_KEYS.AI21,
-    [chat_completion_sources.MAKERSUITE]: SECRET_KEYS.MAKERSUITE,
-    [chat_completion_sources.VERTEXAI]: SECRET_KEYS.VERTEXAI,
-    [chat_completion_sources.MISTRALAI]: SECRET_KEYS.MISTRALAI,
-    [chat_completion_sources.CUSTOM]: SECRET_KEYS.CUSTOM,
-    [chat_completion_sources.COHERE]: SECRET_KEYS.COHERE,
-    [chat_completion_sources.PERPLEXITY]: SECRET_KEYS.PERPLEXITY,
-    [chat_completion_sources.GROQ]: SECRET_KEYS.GROQ,
-    [chat_completion_sources.SILICONFLOW]: SECRET_KEYS.SILICONFLOW,
-    [chat_completion_sources.MINIMAX]: SECRET_KEYS.MINIMAX,
-    [chat_completion_sources.ELECTRONHUB]: SECRET_KEYS.ELECTRONHUB,
-    [chat_completion_sources.CHUTES]: SECRET_KEYS.CHUTES,
-    [chat_completion_sources.NANOGPT]: SECRET_KEYS.NANOGPT,
-    [chat_completion_sources.DEEPSEEK]: SECRET_KEYS.DEEPSEEK,
-    [chat_completion_sources.AIMLAPI]: SECRET_KEYS.AIMLAPI,
-    [chat_completion_sources.XAI]: SECRET_KEYS.XAI,
-    [chat_completion_sources.POLLINATIONS]: SECRET_KEYS.POLLINATIONS,
-    [chat_completion_sources.MOONSHOT]: SECRET_KEYS.MOONSHOT,
-    [chat_completion_sources.FIREWORKS]: SECRET_KEYS.FIREWORKS,
-    [chat_completion_sources.COMETAPI]: SECRET_KEYS.COMETAPI,
-    [chat_completion_sources.AZURE_OPENAI]: SECRET_KEYS.AZURE_OPENAI,
-    [chat_completion_sources.ZAI]: SECRET_KEYS.ZAI,
-    [chat_completion_sources.WORKERS_AI]: SECRET_KEYS.WORKERS_AI,
-};
-
-let settings = Object.assign(getDefaultSettings(), extension_settings[EXTENSION_KEY] ?? {});
+let settings = initializeSettings();
 
 let activeOverride = null;
 let pendingGenerationRoute = '';
@@ -124,78 +79,43 @@ let mainReplyGenerationTimeout = null;
 let connectRefreshTimeout = null;
 const modelFetches = new Map();
 const modelCache = new Map();
+const modelRefreshes = new Map();
+let savingKey = false;
 
 function saveSettings() {
     extension_settings[EXTENSION_KEY] = settings;
     saveSettingsDebounced();
 }
 
-function getDefaultSettings() {
-    return {
-        drawerOpen: true,
-        source: chat_completion_sources.OPENAI,
-        providers: {},
-        migratedDrawerState: false,
-    };
-}
-
 function initializeSettings() {
-    const savedSettings = Object.assign(getDefaultSettings(), extension_settings[EXTENSION_KEY] ?? {});
-    let changed = false;
-
-    if (!savedSettings.providers || typeof savedSettings.providers !== 'object') {
-        savedSettings.providers = {};
-        changed = true;
-    }
-
-    if (!savedSettings.migratedDrawerState) {
-        savedSettings.drawerOpen = true;
-        savedSettings.migratedDrawerState = true;
-        changed = true;
-    }
-
-    if (savedSettings.secretId || savedSettings.secretKey || savedSettings.model || savedSettings.modelsBySource) {
-        const source = savedSettings.source || chat_completion_sources.OPENAI;
-        savedSettings.providers[source] = Object.assign(getDefaultProviderSettings(), {
-            model: savedSettings.model || '',
-            secretId: savedSettings.secretId || '',
-            secretKey: savedSettings.secretKey || '',
-            models: Array.isArray(savedSettings.modelsBySource?.[source]) ? savedSettings.modelsBySource[source] : [],
-        }, savedSettings.providers[source] ?? {});
-        changed = true;
-    }
-
-    for (const deprecatedKey of ['enabled', 'model', 'secretId', 'secretKey', 'modelsBySource']) {
-        if (Object.hasOwn(savedSettings, deprecatedKey)) {
-            delete savedSettings[deprecatedKey];
-            changed = true;
+    const saved = isRecord(extension_settings[EXTENSION_KEY]) ? extension_settings[EXTENSION_KEY] : {};
+    const source = PROVIDERS.has(saved.source) ? saved.source : chat_completion_sources.OPENAI;
+    const providers = {};
+    for (const key of PROVIDERS.keys()) {
+        const current = isRecord(saved.providers) && Object.hasOwn(saved.providers, key)
+            ? saved.providers[key] : undefined;
+        if (current !== undefined || key === source) {
+            const legacy = key === source ? {
+                model: saved.model,
+                secretId: saved.secretId,
+                secretKey: saved.secretKey,
+                models: saved.modelsBySource?.[key],
+            } : {};
+            providers[key] = normalizeProvider({ ...legacy, ...(isRecord(current) ? current : {}) });
         }
     }
-
-    for (const provider of Object.values(savedSettings.providers)) {
-        if (!provider || typeof provider !== 'object') {
-            continue;
-        }
-
-        const normalizedModels = normalizeModels(provider.models);
-        if (!areModelsEqual(provider.models, normalizedModels)) {
-            provider.models = normalizedModels;
-            changed = true;
-        }
-
-        for (const deprecatedKey of ['secretSavedAt', 'keyLength']) {
-            if (Object.hasOwn(provider, deprecatedKey)) {
-                delete provider[deprecatedKey];
-                changed = true;
-            }
-        }
-    }
-
-    extension_settings[EXTENSION_KEY] = savedSettings;
-    if (changed) {
+    const normalized = {
+        drawerOpen: saved.migratedDrawerState === true && typeof saved.drawerOpen === 'boolean'
+            ? saved.drawerOpen : true,
+        source,
+        providers,
+        migratedDrawerState: true,
+    };
+    extension_settings[EXTENSION_KEY] = normalized;
+    if (JSON.stringify(saved) !== JSON.stringify(normalized)) {
         saveSettingsDebounced();
     }
-    return savedSettings;
+    return normalized;
 }
 
 function debounce(callback, delay) {
@@ -239,10 +159,10 @@ function createFieldBlock(title, ...children) {
 }
 
 function createIconButton(id, iconClass, title) {
-    return createElement('div', {
+    return createElement('button', {
         id,
         classNames: ['menu_button', 'fa-solid', iconClass],
-        attributes: { title },
+        attributes: { title, type: 'button', 'aria-label': title },
     });
 }
 
@@ -263,32 +183,11 @@ function createTextInput({ id, classNames = [], placeholder = '', list = '' } = 
     });
 }
 
-function getDefaultProviderSettings() {
-    return {
-        model: '',
-        secretId: '',
-        secretKey: '',
-        secretLabel: '',
-        models: [],
-        customUrl: '',
-    };
-}
-
 function getProviderSettings(source = settings.source) {
-    if (!settings.providers[source] || typeof settings.providers[source] !== 'object') {
-        settings.providers[source] = getDefaultProviderSettings();
+    if (!PROVIDERS.has(source)) {
+        throw new TypeError('Unsupported Chat Completion source.');
     }
-
-    settings.providers[source] = Object.assign(getDefaultProviderSettings(), settings.providers[source]);
-    return settings.providers[source];
-}
-
-function getModelSetting(source = settings.source) {
-    return MODEL_SETTING_BY_SOURCE[source] ?? 'openai_model';
-}
-
-function getSelectedModel() {
-    return String(getProviderSettings().model || '').trim();
+    return settings.providers[source] ??= normalizeProvider({});
 }
 
 function getStoredModels(source = settings.source) {
@@ -314,7 +213,7 @@ function setStoredModels(provider, models) {
 }
 
 function getSecretKey(source = settings.source) {
-    return SECRET_KEY_BY_SOURCE[source] || '';
+    return PROVIDERS.get(source)?.secretKey || '';
 }
 
 function buildAuxiliarySecretLabel(source = settings.source) {
@@ -325,23 +224,21 @@ function getAuxiliarySecretLabel(source = settings.source) {
     return getProviderSettings(source).secretLabel || buildAuxiliarySecretLabel(source);
 }
 
-function getSecretsForSource(source = settings.source) {
-    const secretKey = getSecretKey(source);
+function getSecrets(secretKey) {
     const secrets = secret_state[secretKey];
-    return Array.isArray(secrets) ? secrets : [];
+    return Array.isArray(secrets) ? secrets.filter(secret => isRecord(secret) && cleanString(secret.id)) : [];
 }
 
 function getSecretById(secretKey, secretId) {
-    const secrets = secret_state[secretKey];
-    return Array.isArray(secrets) ? secrets.find(secret => secret.id === secretId) : null;
+    return getSecrets(secretKey).find(secret => secret.id === secretId) ?? null;
 }
 
 function findAuxiliarySecret(source = settings.source) {
     const label = getAuxiliarySecretLabel(source);
     const fallbackLabel = buildAuxiliarySecretLabel(source);
-    const matchingSecrets = getSecretsForSource(source)
+    const matchingSecrets = getSecrets(getSecretKey(source))
         .filter(secret => {
-            const secretLabel = String(secret.label || '').trim();
+            const secretLabel = cleanString(secret.label);
             return secretLabel === label || secretLabel === fallbackLabel;
         });
     return matchingSecrets[matchingSecrets.length - 1] || null;
@@ -375,7 +272,7 @@ function syncSavedSecret(source = settings.source) {
     if (secret) {
         provider.secretId = secret.id;
         provider.secretKey = secretKey;
-        provider.secretLabel = String(secret.label || '') || getAuxiliarySecretLabel(source);
+        provider.secretLabel = cleanString(secret.label) || getAuxiliarySecretLabel(source);
         return secret;
     }
 
@@ -388,12 +285,9 @@ function syncSavedSecret(source = settings.source) {
 }
 
 function getRestorableSecretId(secretKey, excludedId = '') {
-    const secrets = secret_state[secretKey];
-    if (!Array.isArray(secrets)) {
-        return '';
-    }
+    const secrets = getSecrets(secretKey);
 
-    const activeSecret = secrets.find(secret => secret.active && secret.id !== excludedId);
+    const activeSecret = secrets.find(secret => secret.active === true && secret.id !== excludedId);
     return activeSecret?.id || secrets.find(secret => secret.id !== excludedId)?.id || '';
 }
 
@@ -412,26 +306,15 @@ function canFetchWithoutSecret(source = settings.source) {
 }
 
 function canFetchModelsForSource(source = settings.source) {
-    return STATUS_SUPPORTED_SOURCES.has(source);
+    return PROVIDERS.get(source)?.supportsStatus === true;
 }
 
 function getSavedKeyStatusText() {
     return document.getElementById('viewSecrets')?.getAttribute('key_saved_text') || 'Key saved';
 }
 
-function snapshotSettings(source = oai_settings.chat_completion_source) {
-    const modelSetting = getModelSetting(source);
-    return {
-        source,
-        modelSetting,
-        model: oai_settings[modelSetting],
-        customUrl: oai_settings.custom_url,
-        customIncludeBody: oai_settings.custom_include_body,
-        customExcludeBody: oai_settings.custom_exclude_body,
-        customIncludeHeaders: oai_settings.custom_include_headers,
-        reverseProxy: oai_settings.reverse_proxy,
-        proxyPassword: oai_settings.proxy_password,
-    };
+function snapshotSettings(keys) {
+    return keys.map(key => [key, Object.hasOwn(oai_settings, key), oai_settings[key]]);
 }
 
 function notifyAuxiliaryError(message) {
@@ -447,8 +330,8 @@ function applyAuxiliarySettings() {
 
     const source = settings.source;
     const provider = getProviderSettings(source);
-    const modelSetting = getModelSetting(source);
-    const model = getSelectedModel();
+    const modelSetting = PROVIDERS.get(source)?.modelSetting;
+    const model = cleanString(provider.model);
     const customUrl = source === chat_completion_sources.CUSTOM
         ? normalizeCustomBaseUrl(provider.customUrl)
         : '';
@@ -463,19 +346,29 @@ function applyAuxiliarySettings() {
         return false;
     }
 
-    activeOverride = snapshotSettings();
-    oai_settings.chat_completion_source = source;
-    oai_settings.reverse_proxy = '';
-    oai_settings.proxy_password = '';
-    oai_settings[modelSetting] = model;
+    const secret = syncSavedSecret(source);
+    if (!secret && !canFetchWithoutSecret(source)) {
+        notifyAuxiliaryError('Save an auxiliary API key before generating auxiliary requests.');
+        return false;
+    }
+    const overrides = {
+        chat_completion_source: source,
+        reverse_proxy: '',
+        proxy_password: '',
+        [modelSetting]: model,
+    };
     if (source === chat_completion_sources.CUSTOM) {
-        oai_settings.custom_url = customUrl;
-        oai_settings.custom_include_body = '';
-        oai_settings.custom_exclude_body = '';
-        oai_settings.custom_include_headers = '';
+        Object.assign(overrides, {
+            custom_url: customUrl,
+            custom_include_body: '',
+            custom_exclude_body: '',
+            custom_include_headers: '',
+        });
     }
 
-    pendingSecretId = syncSavedSecret(source)?.id || '';
+    activeOverride = snapshotSettings(Object.keys(overrides));
+    Object.assign(oai_settings, overrides);
+    pendingSecretId = secret?.id || '';
     scheduleRestoreOverride();
     return true;
 }
@@ -500,7 +393,7 @@ function clearRestoreOverrideTimeout() {
 }
 
 function normalizePromptText(value) {
-    return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    return (typeof value === 'string' ? value : '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 function getMessageContentText(content) {
@@ -529,12 +422,18 @@ function getSystemPromptTexts(chat) {
 
 function promptContainsTemplate(text, template) {
     const normalizedText = normalizePromptText(text);
-    const templateParts = String(template || '')
+    const templateParts = (typeof template === 'string' ? template : '')
         .split(PROMPT_TEMPLATE_MACRO_PATTERN)
         .map(normalizePromptText)
         .filter(Boolean);
 
-    return templateParts.length > 0 && templateParts.every(part => normalizedText.includes(part));
+    let offset = 0;
+    return templateParts.length > 0 && templateParts.every(part => {
+        const index = normalizedText.indexOf(part, offset);
+        if (index < 0) return false;
+        offset = index + part.length;
+        return true;
+    });
 }
 
 function isSummaryPromptText(text) {
@@ -546,7 +445,7 @@ function isSummaryPromptText(text) {
 }
 
 function isExpressionPromptText(text) {
-    if (Number(extension_settings.expressions?.api) !== EXPRESSIONS_API_LLM) {
+    if (![EXPRESSIONS_API_LLM, String(EXPRESSIONS_API_LLM)].includes(extension_settings.expressions?.api)) {
         return false;
     }
 
@@ -601,7 +500,7 @@ function shouldBlockExpressionPrompt(route) {
 }
 
 function onGenerationStarted(type, options, dryRun) {
-    if (dryRun) {
+    if (main_api !== 'openai' || typeof type !== 'string' || dryRun) {
         pendingGenerationRoute = '';
         return;
     }
@@ -654,7 +553,7 @@ function onChatCompletionPromptReady(eventData) {
 
 function abortRawPrompt(eventData) {
     pendingGenerationRoute = '';
-    if (eventData) {
+    if (isRecord(eventData)) {
         eventData.chat = null;
     }
 }
@@ -667,14 +566,10 @@ function restorePrimarySettings() {
         return;
     }
 
-    oai_settings.chat_completion_source = activeOverride.source;
-    oai_settings[activeOverride.modelSetting] = activeOverride.model;
-    oai_settings.custom_url = activeOverride.customUrl;
-    oai_settings.custom_include_body = activeOverride.customIncludeBody;
-    oai_settings.custom_exclude_body = activeOverride.customExcludeBody;
-    oai_settings.custom_include_headers = activeOverride.customIncludeHeaders;
-    oai_settings.reverse_proxy = activeOverride.reverseProxy;
-    oai_settings.proxy_password = activeOverride.proxyPassword;
+    for (const [key, existed, value] of activeOverride) {
+        if (existed) oai_settings[key] = value;
+        else delete oai_settings[key];
+    }
     activeOverride = null;
     pendingGenerationRoute = '';
     pendingSecretId = '';
@@ -693,45 +588,54 @@ function updateKeyStatus() {
     saveButton?.classList.toggle('fa-save', !saved);
     if (saveButton) {
         saveButton.title = saved ? 'API key saved' : 'Save API key';
+        saveButton.setAttribute('aria-label', saveButton.title);
     }
 }
 
 async function saveKeyFromInput() {
     const input = document.getElementById('auxiliary_model_api_key');
-    const provider = getProviderSettings();
-    const value = String(input?.value || '').trim();
-    const secretKey = getSecretKey();
-    if (!input || !value || !secretKey) {
-        return;
-    }
+    const button = document.getElementById('auxiliary_model_save_key');
+    const source = settings.source;
+    const value = cleanString(input?.value);
+    const secretKey = getSecretKey(source);
+    if (savingKey || !input || !value || !secretKey) return;
 
-    const previousAuxId = syncSavedSecret()?.id || '';
+    const previousAuxId = syncSavedSecret(source)?.id || '';
     const restorableSecretId = getRestorableSecretId(secretKey, previousAuxId);
-    const secretLabel = buildAuxiliarySecretLabel();
+    const secretLabel = buildAuxiliarySecretLabel(source);
+    savingKey = true;
+    if (button) button.disabled = true;
+    try {
+        const id = cleanString(await writeSecret(secretKey, value, secretLabel));
+        if (!id) throw new Error('Could not save the auxiliary API key.');
 
-    const id = await writeSecret(secretKey, value, secretLabel);
-    if (!id) {
-        console.warn('[Auxiliary Model] Could not save API key.');
-        return;
+        // Persist the new reference before cleanup or host events can reload settings.
+        Object.assign(getProviderSettings(source), { secretId: id, secretKey, secretLabel, models: [] });
+        saveSettings();
+        if (settings.source === source && input.value.trim() === value) input.value = '';
+
+        if (restorableSecretId) {
+            await rotateSecret(secretKey, restorableSecretId);
+            if (getSecretById(secretKey, restorableSecretId)?.active !== true) {
+                throw new Error('API key saved, but the main API key could not be restored.');
+            }
+        }
+        if (previousAuxId && previousAuxId !== id) {
+            await deleteSecret(secretKey, previousAuxId);
+            if (getSecretById(secretKey, previousAuxId)) {
+                throw new Error('API key saved, but the previous auxiliary key could not be removed.');
+            }
+        }
+    } catch (error) {
+        notifyAuxiliaryError(error instanceof Error ? error.message : 'Could not save the auxiliary API key.');
+    } finally {
+        savingKey = false;
+        if (button) button.disabled = false;
+        invalidateModelRequests();
+        updateKeyStatus();
+        populateModelControl();
+        await refreshAuxiliaryModels(source);
     }
-
-    if (previousAuxId) {
-        await deleteSecret(secretKey, previousAuxId);
-    }
-
-    if (restorableSecretId) {
-        await rotateSecret(secretKey, restorableSecretId);
-    }
-
-    provider.secretId = id;
-    provider.secretKey = secretKey;
-    provider.secretLabel = secretLabel;
-    setStoredModels(provider, []);
-    input.value = '';
-    updateKeyStatus();
-    populateModelControl();
-    saveSettings();
-    refreshAuxiliaryModels();
 }
 
 function populateModelControl() {
@@ -772,66 +676,6 @@ function populateModelControl() {
     modelSelect.value = fetchedModels.some(model => model.id === savedModel) ? savedModel : '';
 }
 
-function normalizeModels(responseData) {
-    const sourceData = Array.isArray(responseData)
-        ? responseData
-        : responseData?.data?.data ?? responseData?.data ?? responseData?.models ?? [];
-
-    if (!Array.isArray(sourceData)) {
-        return [];
-    }
-
-    return sourceData
-        .map(model => {
-            if (typeof model === 'string') {
-                return { id: model, name: model };
-            }
-
-            const id = model?.id || model?.name;
-            if (!id) {
-                return null;
-            }
-
-            return {
-                id: String(id),
-                name: String(model?.info?.name || model?.display_name || model?.name || id),
-            };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.id.localeCompare(b.id));
-}
-
-function normalizeCustomBaseUrl(url) {
-    const trimmed = String(url || '').trim();
-    if (!trimmed) {
-        return '';
-    }
-
-    try {
-        const parsed = new URL(trimmed);
-        if (!['http:', 'https:'].includes(parsed.protocol)) {
-            return '';
-        }
-
-        if (parsed.username || parsed.password) {
-            return '';
-        }
-
-        if (parsed.search || parsed.hash) {
-            return '';
-        }
-
-        parsed.pathname = parsed.pathname.replace(/\/+$/g, '');
-        if (parsed.pathname !== '/v1') {
-            return '';
-        }
-
-        return parsed.toString().replace(/\/$/g, '');
-    } catch {
-        return '';
-    }
-}
-
 function getAuxiliaryStatusPayload(source = settings.source) {
     const provider = getProviderSettings(source);
     const secret = syncSavedSecret(source);
@@ -843,127 +687,110 @@ function getAuxiliaryStatusPayload(source = settings.source) {
     switch (source) {
         case chat_completion_sources.CUSTOM:
             payload.custom_url = normalizeCustomBaseUrl(provider.customUrl);
-            payload.custom_include_headers = payload.custom_url === normalizeCustomBaseUrl(oai_settings.custom_url)
-                ? substituteParams(oai_settings.custom_include_headers || '')
-                : '';
+            payload.custom_include_headers = '';
             break;
         case chat_completion_sources.AZURE_OPENAI:
-            payload.azure_base_url = oai_settings.azure_base_url;
-            payload.azure_deployment_name = oai_settings.azure_deployment_name;
-            payload.azure_api_version = oai_settings.azure_api_version;
+            payload.azure_base_url = cleanString(oai_settings.azure_base_url);
+            payload.azure_deployment_name = cleanString(oai_settings.azure_deployment_name);
+            payload.azure_api_version = cleanString(oai_settings.azure_api_version);
             break;
         case chat_completion_sources.SILICONFLOW:
-            payload.siliconflow_endpoint = oai_settings.siliconflow_endpoint;
+            payload.siliconflow_endpoint = cleanString(oai_settings.siliconflow_endpoint);
             break;
         case chat_completion_sources.WORKERS_AI:
-            payload.workers_ai_account_id = oai_settings.workers_ai_account_id;
+            payload.workers_ai_account_id = cleanString(oai_settings.workers_ai_account_id);
             break;
         case chat_completion_sources.POLLINATIONS:
-            payload.pollinations_endpoint = oai_settings.pollinations_endpoint;
+            payload.pollinations_endpoint = cleanString(oai_settings.pollinations_endpoint);
             break;
     }
 
     return payload;
 }
 
-function getAuxiliaryModelsCacheKey(payload) {
-    return JSON.stringify(payload);
+function invalidateModelRequests() {
+    for (const request of modelFetches.values()) request.controller.abort();
+    modelFetches.clear();
+    modelCache.clear();
+    modelRefreshes.clear();
 }
 
 async function fetchAuxiliaryModels(cacheKey, payload) {
-    if (modelCache.has(cacheKey)) {
-        return modelCache.get(cacheKey);
-    }
+    if (modelCache.has(cacheKey)) return modelCache.get(cacheKey);
+    if (modelFetches.has(cacheKey)) return modelFetches.get(cacheKey).promise;
 
-    if (modelFetches.has(cacheKey)) {
-        return modelFetches.get(cacheKey);
-    }
-
-    const promise = fetch('/api/backends/chat-completions/status', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify(payload),
-        cache: 'no-cache',
-    })
-        .then(async response => {
-            if (!response.ok) {
-                throw new Error(response.statusText);
-            }
-
-            const responseData = await response.json();
-            if (responseData?.error) {
-                throw new Error(responseData?.message || 'Status endpoint returned an error.');
-            }
-
-            const models = normalizeModels(responseData);
-            if (models.length > 0) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), MODEL_FETCH_TIMEOUT_MS);
+    const request = { controller, promise: null };
+    request.promise = (async () => {
+        try {
+            const response = await fetch('/api/backends/chat-completions/status', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify(payload),
+                cache: 'no-cache',
+                signal: controller.signal,
+            });
+            if (!response.ok) throw new Error(`Status request failed (${response.status}).`);
+            const data = await response.json();
+            if (data?.error) throw new Error('Status endpoint returned an error.');
+            const models = normalizeModels(data);
+            if (modelFetches.get(cacheKey) === request && !controller.signal.aborted) {
+                // Keep the cache bounded when credentials or endpoints change.
+                if (modelCache.size >= PROVIDERS.size) modelCache.delete(modelCache.keys().next().value);
                 modelCache.set(cacheKey, models);
             }
             return models;
-        })
-        .finally(() => modelFetches.delete(cacheKey));
+        } finally {
+            clearTimeout(timeout);
+            if (modelFetches.get(cacheKey) === request) modelFetches.delete(cacheKey);
+        }
+    })();
+    modelFetches.set(cacheKey, request);
+    return request.promise;
+}
 
-    modelFetches.set(cacheKey, promise);
-    return promise;
+function updateModelControls(source, changed = false) {
+    if (settings.source === source) populateModelControl();
+    if (changed) saveSettings();
 }
 
 async function refreshAuxiliaryModels(source = settings.source, { force = false } = {}) {
+    if (!PROVIDERS.has(source) || savingKey) return;
     const provider = getProviderSettings(source);
+    const token = {};
+    modelRefreshes.set(source, token);
     if (!canFetchModelsForSource(source)) {
-        if (settings.source === source) {
-            populateModelControl();
-        }
+        updateModelControls(source);
         return;
     }
-
-    if (source === chat_completion_sources.CUSTOM && !normalizeCustomBaseUrl(provider.customUrl)) {
-        const changed = setStoredModels(provider, []);
-        if (settings.source === source) {
-            populateModelControl();
-        }
-        if (changed) {
-            saveSettings();
-        }
-        return;
-    }
-
-    if (!hasSavedSecret(source) && !canFetchWithoutSecret(source)) {
-        if (settings.source === source) {
-            populateModelControl();
-        }
+    if ((source === chat_completion_sources.CUSTOM && !normalizeCustomBaseUrl(provider.customUrl))
+        || (!hasSavedSecret(source) && !canFetchWithoutSecret(source))) {
+        updateModelControls(source, setStoredModels(provider, []));
         return;
     }
 
     const payload = getAuxiliaryStatusPayload(source);
-    const cacheKey = getAuxiliaryModelsCacheKey(payload);
+    const cacheKey = JSON.stringify(payload);
     if (force) {
         modelCache.delete(cacheKey);
+        modelFetches.get(cacheKey)?.controller.abort();
         modelFetches.delete(cacheKey);
     }
-
     try {
         const models = await fetchAuxiliaryModels(cacheKey, payload);
-        if (cacheKey !== getAuxiliaryModelsCacheKey(getAuxiliaryStatusPayload(source))) {
-            return;
-        }
-
+        if (modelRefreshes.get(source) !== token
+            || cacheKey !== JSON.stringify(getAuxiliaryStatusPayload(source))) return;
         const currentProvider = getProviderSettings(source);
         let changed = setStoredModels(currentProvider, models);
         if (models.length > 0 && !currentProvider.model) {
             currentProvider.model = models[0].id;
             changed = true;
         }
-        if (settings.source === source) {
-            populateModelControl();
-        }
-        if (changed) {
-            saveSettings();
-        }
+        updateModelControls(source, changed);
     } catch (error) {
-        console.warn('[Auxiliary Model] Could not load models.', error);
-        if (settings.source === source) {
-            populateModelControl();
-        }
+        if (error?.name !== 'AbortError') console.warn('[Auxiliary Model] Could not load models.', error);
+        updateModelControls(source);
     }
 }
 
@@ -986,12 +813,10 @@ function scheduleConnectRefresh() {
 }
 
 function syncControlsFromSecretState(secretKey) {
-    if (secretKey !== getSecretKey()) {
-        return;
-    }
-
-    modelCache.clear();
-    modelFetches.clear();
+    const sources = [...PROVIDERS.keys()].filter(source => getSecretKey(source) === secretKey);
+    if (!sources.length) return;
+    invalidateModelRequests();
+    for (const source of sources) syncSavedSecret(source);
     updateKeyStatus();
     populateModelControl();
     saveSettings();
@@ -1013,6 +838,7 @@ function syncDrawerControls() {
 
     if (customEndpointInput) {
         customEndpointInput.value = getProviderSettings().customUrl;
+        customEndpointInput.setCustomValidity('');
     }
 
     customEndpointBlock?.toggleAttribute('hidden', settings.source !== chat_completion_sources.CUSTOM);
@@ -1021,6 +847,8 @@ function syncDrawerControls() {
 }
 
 function reloadSettingsFromStorage() {
+    restorePrimarySettings();
+    invalidateModelRequests();
     settings = initializeSettings();
     mountDrawer();
 }
@@ -1075,6 +903,9 @@ function createDrawer() {
     auxSource.id = 'auxiliary_model_source';
     auxSource.name = 'auxiliary_model_source';
     auxSource.classList.add('auxiliary-model-field');
+    for (const option of [...auxSource.options]) {
+        if (!PROVIDERS.has(option.value)) option.remove();
+    }
     auxSource.value = settings.source;
     grid.append(createFieldBlock('Chat Completion Source', auxSource));
 
@@ -1091,6 +922,7 @@ function createDrawer() {
         id: 'auxiliary_model_api_key',
         classNames: ['text_pole', 'flex1'],
     });
+    keyInput.type = 'password';
     const saveKeyButton = createIconButton('auxiliary_model_save_key', 'fa-save', 'Save API key');
     const keyRow = createElement('div', { classNames: ['auxiliary-model-key-row'] });
     keyRow.append(keyInput, saveKeyButton);
@@ -1134,7 +966,9 @@ function createDrawer() {
 
     customEndpointInput.addEventListener('input', () => {
         const provider = getProviderSettings();
-        provider.customUrl = customEndpointInput.value;
+        provider.customUrl = normalizeCustomBaseUrl(customEndpointInput.value);
+        customEndpointInput.setCustomValidity(customEndpointInput.value && !provider.customUrl
+            ? 'Enter an HTTP(S) base URL ending in /v1.' : '');
         setStoredModels(provider, []);
         if (settings.source === chat_completion_sources.CUSTOM) {
             populateModelControl();
@@ -1145,14 +979,9 @@ function createDrawer() {
 
     auxSource.addEventListener('change', () => {
         const nextSource = auxSource.value;
-        if (settings.source !== nextSource) {
+        if (PROVIDERS.has(nextSource) && settings.source !== nextSource) {
             settings.source = nextSource;
-            const provider = getProviderSettings();
-            keyInput.value = '';
-            customEndpointInput.value = provider.customUrl;
-            customEndpointBlock.toggleAttribute('hidden', settings.source !== chat_completion_sources.CUSTOM);
-            populateModelControl();
-            updateKeyStatus();
+            syncDrawerControls();
             saveSettings();
             refreshAuxiliaryModels();
         }
@@ -1170,14 +999,14 @@ function createDrawer() {
 
     modelInput.addEventListener('input', () => {
         const provider = getProviderSettings();
-        provider.model = modelInput.value;
+        provider.model = cleanString(modelInput.value);
         availableModelsSelect.value = getStoredModels().some(model => model.id === provider.model) ? provider.model : '';
         saveSettings();
     });
 
     availableModelsSelect.addEventListener('change', () => {
-        const value = String(availableModelsSelect.value || '');
-        if (!value) {
+        const value = cleanString(availableModelsSelect.value);
+        if (!value || !getStoredModels().some(model => model.id === value)) {
             return;
         }
 
@@ -1211,19 +1040,22 @@ eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, (generateData) => {
         return;
     }
 
-    if (pendingSecretId) {
-        generateData.secret_id = pendingSecretId;
+    try {
+        if (isRecord(generateData)) generateData.secret_id = pendingSecretId;
+    } finally {
+        restorePrimarySettings();
     }
-
-    restorePrimarySettings();
 });
 
 eventSource.makeLast(event_types.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
 eventSource.on(event_types.GENERATION_ENDED, restorePrimarySettings);
 eventSource.on(event_types.GENERATION_STOPPED, restorePrimarySettings);
 eventSource.on(event_types.GENERATION_STOPPED, clearMainReplyGenerationInProgress);
-eventSource.makeFirst(event_types.CHAT_CHANGED, clearMainReplyGenerationInProgress);
-eventSource.on(event_types.ONLINE_STATUS_CHANGED, () => scheduleConnectRefresh());
+eventSource.makeFirst(event_types.CHAT_CHANGED, () => {
+    clearMainReplyGenerationInProgress();
+    restorePrimarySettings();
+});
+eventSource.on(event_types.ONLINE_STATUS_CHANGED, scheduleConnectRefresh);
 eventSource.on(event_types.EXTENSION_SETTINGS_LOADED, reloadSettingsFromStorage);
 [event_types.SECRET_WRITTEN, event_types.SECRET_DELETED, event_types.SECRET_ROTATED, event_types.SECRET_EDITED].forEach(eventType => {
     eventSource.on(eventType, syncControlsFromSecretState);
