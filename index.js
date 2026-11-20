@@ -968,20 +968,7 @@ function createDrawer() {
     customEndpointBlock.id = 'auxiliary_model_custom_endpoint_block';
     grid.append(customEndpointBlock);
 
-    const flexDiv = createElement('div', {
-        classNames: ['flex-container', 'flex'],
-    });
-    const additionalParamsButton = createElement('div', {
-        id: 'auxiliary_customize_additional_parameters',
-        classNames: ['menu_button', 'menu_button_icon', 'auxiliary-model-field'],
-        text: 'Additional Parameters',
-        attributes: { 'data-source': 'custom', 'data-i18n': 'Additional Parameters' },
-    });
-    const additionalParamsBlock = createFieldBlock('Additional Parameters', additionalParamsButton);
-    additionalParamsBlock.id = 'auxiliary_model_additional_parameters_block';
-    flexDiv.append(additionalParamsBlock);
-    grid.append(flexDiv);
-
+    
     const keyInput = createTextInput({
         id: 'auxiliary_model_api_key',
         classNames: ['text_pole', 'flex1'],
@@ -1013,6 +1000,21 @@ function createDrawer() {
 
     drawer.append(content);
     insertionAnchorDrawer.insertAdjacentElement('beforebegin', drawer);
+
+    const flexDiv = createElement('div', {
+        classNames: ['flex-container', 'flex'],
+    });
+    const additionalParamsButton = createElement('div', {
+        id: 'auxiliary_customize_additional_parameters',
+        classNames: ['menu_button', 'menu_button_icon', 'auxiliary-model-field'],
+        text: 'Additional Parameters',
+        attributes: { 'data-source': 'custom', 'data-i18n': 'Additional Parameters' },
+    });
+    const additionalParamsBlock = createFieldBlock('Additional Parameters', additionalParamsButton);
+    additionalParamsBlock.id = 'auxiliary_model_additional_parameters_block';
+    flexDiv.append(additionalParamsBlock);
+    grid.append(flexDiv);
+
 
     toggleDrawer(drawer, settings.drawerOpen);
     // Native drawer clicks emit a jQuery event, while toggleDrawer emits a DOM event.
