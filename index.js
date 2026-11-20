@@ -5,6 +5,7 @@ import {
     getRequestHeaders,
     main_api,
     saveSettingsDebounced,
+    substituteParams,
 } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { toggleDrawer } from '../../../utils.js';
@@ -706,7 +707,7 @@ function getAuxiliaryStatusPayload(source = settings.source) {
     switch (source) {
         case chat_completion_sources.CUSTOM:
             payload.custom_url = normalizeCustomBaseUrl(provider.customUrl);
-            payload.custom_include_headers = provider.customIncludeHeaders || '';
+            payload.custom_include_headers = substituteParams(provider.customIncludeHeaders || '');
             break;
         case chat_completion_sources.AZURE_OPENAI:
             payload.azure_base_url = cleanString(oai_settings.azure_base_url);
@@ -846,7 +847,7 @@ function syncDrawerControls() {
     const keyInput = document.getElementById('auxiliary_model_api_key');
     const customEndpointInput = document.getElementById('auxiliary_model_custom_url');
     const customEndpointBlock = document.getElementById('auxiliary_model_custom_endpoint_block');
-    const additionalParamsBlock = document.getElementById('auxiliary_model_additional_parameters_block');
+    const additionalParamsButton = document.getElementById('auxiliary_model_additional_parameters');
 
     if (auxSource) {
         auxSource.value = settings.source;
@@ -862,7 +863,7 @@ function syncDrawerControls() {
     }
 
     customEndpointBlock?.toggleAttribute('hidden', settings.source !== chat_completion_sources.CUSTOM);
-    additionalParamsBlock?.toggleAttribute('hidden', settings.source !== chat_completion_sources.CUSTOM);
+    additionalParamsButton?.toggleAttribute('hidden', settings.source !== chat_completion_sources.CUSTOM);
     populateModelControl();
     updateKeyStatus();
 }
@@ -892,31 +893,36 @@ async function onCustomizeAdditionalParametersClick() {
     <h3 data-i18n="Additional Parameters">Additional Parameters</h3>
     <div class="flex1 flex-container flexFlowColumn">
         <h4 data-i18n="Include Body Parameters">Include Body Parameters</h4>
-        <textarea id="custom_include_body" class="flex1" placeholder="Parameters to be included in the Chat Completion request body (YAML object)&#10;&#10;Example:&#10;top_k: 20&#10;repetition_penalty: 1.1" data-i18n="[placeholder]custom_include_body_desc"></textarea>
+        <textarea id="auxiliary_model_custom_include_body" class="flex1" placeholder="Parameters to be included in the Chat Completion request body (YAML object)&#10;&#10;Example:&#10;top_k: 20&#10;repetition_penalty: 1.1" data-i18n="[placeholder]custom_include_body_desc"></textarea>
     </div>
     <div class="flex1 flex-container flexFlowColumn">
         <h4 data-i18n="Exclude Body Parameters">Exclude Body Parameters</h4>
-        <textarea id="custom_exclude_body" class="flex1" placeholder="Parameters to be excluded from the Chat Completion request body (YAML array)&#10;&#10;Example:&#10;- frequency_penalty&#10;- presence_penalty" data-i18n="[placeholder]custom_exclude_body_desc"></textarea>
+        <textarea id="auxiliary_model_custom_exclude_body" class="flex1" placeholder="Parameters to be excluded from the Chat Completion request body (YAML array)&#10;&#10;Example:&#10;- frequency_penalty&#10;- presence_penalty" data-i18n="[placeholder]custom_exclude_body_desc"></textarea>
     </div>
     <div class="flex1 flex-container flexFlowColumn">
         <h4 data-i18n="Include Request Headers">Include Request Headers</h4>
-        <textarea id="custom_include_headers" class="flex1" placeholder="Additional headers for Chat Completion requests (YAML object)&#10;&#10;Example:&#10;CustomHeader: custom-value&#10;AnotherHeader: custom-value" data-i18n="[placeholder]custom_include_headers_desc"></textarea>
+        <textarea id="auxiliary_model_custom_include_headers" class="flex1" placeholder="Additional headers for Chat Completion requests (YAML object)&#10;&#10;Example:&#10;CustomHeader: custom-value&#10;AnotherHeader: custom-value" data-i18n="[placeholder]custom_include_headers_desc"></textarea>
     </div>
 </div>`;
     const $template = globalThis.jQuery(templateHtml);
-    $template.find('#custom_include_body').val(provider.customIncludeBody || '').on('input', function () {
-        provider.customIncludeBody = String(globalThis.jQuery(this).val() ?? '');
-        saveSettings();
-    });
-    $template.find('#custom_exclude_body').val(provider.customExcludeBody || '').on('input', function () {
-        provider.customExcludeBody = String(globalThis.jQuery(this).val() ?? '');
-        saveSettings();
-    });
-    $template.find('#custom_include_headers').val(provider.customIncludeHeaders || '').on('input', function () {
-        provider.customIncludeHeaders = String(globalThis.jQuery(this).val() ?? '');
-        saveSettings();
-    });
+    const fields = {
+        auxiliary_model_custom_include_body: 'customIncludeBody',
+        auxiliary_model_custom_exclude_body: 'customExcludeBody',
+        auxiliary_model_custom_include_headers: 'customIncludeHeaders',
+    };
+    for (const [id, key] of Object.entries(fields)) {
+        $template.find(`#${id}`).val(provider[key] || '').on('input', function () {
+            provider[key] = String(globalThis.jQuery(this).val() ?? '');
+            saveSettings();
+        });
+    }
+
+    const previousHeaders = provider.customIncludeHeaders || '';
     await callGenericPopup($template, POPUP_TYPE.TEXT, '', { wide: true, large: true });
+    // Headers are sent with the model list request, so refetch when they change.
+    if ((provider.customIncludeHeaders || '') !== previousHeaders && settings.source === chat_completion_sources.CUSTOM) {
+        refreshAuxiliaryModels(chat_completion_sources.CUSTOM, { force: true });
+    }
 }
 
 function createDrawer() {
@@ -968,7 +974,6 @@ function createDrawer() {
     customEndpointBlock.id = 'auxiliary_model_custom_endpoint_block';
     grid.append(customEndpointBlock);
 
-    
     const keyInput = createTextInput({
         id: 'auxiliary_model_api_key',
         classNames: ['text_pole', 'flex1'],
@@ -998,23 +1003,20 @@ function createDrawer() {
     availableModelsRow.append(availableModelsSelect);
     grid.append(createFieldBlock('Available Models', availableModelsRow));
 
+    // No data-source attribute: SillyTavern toggles those by the main source, not the auxiliary one.
+    const additionalParamsButton = createElement('button', {
+        id: 'auxiliary_model_additional_parameters',
+        classNames: ['menu_button', 'menu_button_icon', 'auxiliary-model-field'],
+        attributes: { type: 'button' },
+    });
+    additionalParamsButton.append(
+        createElement('i', { classNames: ['fa-solid', 'fa-sliders'], attributes: { 'aria-hidden': 'true' } }),
+        createElement('span', { text: 'Additional Parameters' }),
+    );
+    grid.append(additionalParamsButton);
+
     drawer.append(content);
     insertionAnchorDrawer.insertAdjacentElement('beforebegin', drawer);
-
-    const flexDiv = createElement('div', {
-        classNames: ['flex-container', 'flex'],
-    });
-    const additionalParamsButton = createElement('div', {
-        id: 'auxiliary_customize_additional_parameters',
-        classNames: ['menu_button', 'menu_button_icon', 'auxiliary-model-field'],
-        text: 'Additional Parameters',
-        attributes: { 'data-source': 'custom', 'data-i18n': 'Additional Parameters' },
-    });
-    const additionalParamsBlock = createFieldBlock('Additional Parameters', additionalParamsButton);
-    additionalParamsBlock.id = 'auxiliary_model_additional_parameters_block';
-    flexDiv.append(additionalParamsBlock);
-    grid.append(flexDiv);
-
 
     toggleDrawer(drawer, settings.drawerOpen);
     // Native drawer clicks emit a jQuery event, while toggleDrawer emits a DOM event.

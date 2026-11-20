@@ -56,8 +56,8 @@ export function normalizeProvider(value) {
         secretLabel: cleanString(provider.secretLabel),
         models: normalizeModels(provider.models),
         customUrl: normalizeCustomBaseUrl(provider.customUrl),
-        customIncludeBody: normalizeCustomParameterText(provider.customIncludeBody ?? provider.custom_include_body),
-        customExcludeBody: normalizeCustomParameterText(provider.customExcludeBody ?? provider.custom_exclude_body),
-        customIncludeHeaders: normalizeCustomParameterText(provider.customIncludeHeaders ?? provider.custom_include_headers),
+        customIncludeBody: normalizeCustomParameterText(provider.customIncludeBody),
+        customExcludeBody: normalizeCustomParameterText(provider.customExcludeBody),
+        customIncludeHeaders: normalizeCustomParameterText(provider.customIncludeHeaders),
     };
 }

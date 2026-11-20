@@ -39,3 +39,8 @@
     outline: 2px solid currentColor;
     outline-offset: 2px;
 }
+
+/* Native classes such as .menu_button_icon set display, which would override the hidden attribute. */
+#auxiliary_model_drawer [hidden] {
+    display: none;
+}
