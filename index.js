@@ -12,6 +12,7 @@ import {
     chat_completion_sources,
     oai_settings,
 } from '../../../openai.js';
+import { callGenericPopup, POPUP_TYPE } from '../../../popup.js';
 import {
     SECRET_KEYS,
     deleteSecret,
@@ -363,9 +364,9 @@ function applyAuxiliarySettings() {
     if (source === chat_completion_sources.CUSTOM) {
         Object.assign(overrides, {
             custom_url: customUrl,
-            custom_include_body: '',
-            custom_exclude_body: '',
-            custom_include_headers: '',
+            custom_include_body: provider.customIncludeBody || '',
+            custom_exclude_body: provider.customExcludeBody || '',
+            custom_include_headers: provider.customIncludeHeaders || '',
         });
     }
 
@@ -705,7 +706,7 @@ function getAuxiliaryStatusPayload(source = settings.source) {
     switch (source) {
         case chat_completion_sources.CUSTOM:
             payload.custom_url = normalizeCustomBaseUrl(provider.customUrl);
-            payload.custom_include_headers = '';
+            payload.custom_include_headers = provider.customIncludeHeaders || '';
             break;
         case chat_completion_sources.AZURE_OPENAI:
             payload.azure_base_url = cleanString(oai_settings.azure_base_url);
@@ -845,6 +846,7 @@ function syncDrawerControls() {
     const keyInput = document.getElementById('auxiliary_model_api_key');
     const customEndpointInput = document.getElementById('auxiliary_model_custom_url');
     const customEndpointBlock = document.getElementById('auxiliary_model_custom_endpoint_block');
+    const additionalParamsBlock = document.getElementById('auxiliary_model_additional_parameters_block');
 
     if (auxSource) {
         auxSource.value = settings.source;
@@ -860,6 +862,7 @@ function syncDrawerControls() {
     }
 
     customEndpointBlock?.toggleAttribute('hidden', settings.source !== chat_completion_sources.CUSTOM);
+    additionalParamsBlock?.toggleAttribute('hidden', settings.source !== chat_completion_sources.CUSTOM);
     populateModelControl();
     updateKeyStatus();
 }
@@ -881,6 +884,39 @@ function onDocumentClick(event) {
     if (event.target instanceof Element && event.target.closest('#api_button_openai')) {
         scheduleConnectRefresh();
     }
+}
+
+async function onCustomizeAdditionalParametersClick() {
+    const provider = getProviderSettings();
+    const templateHtml = `<div class="flex-container flexFlowColumn height100p">
+    <h3 data-i18n="Additional Parameters">Additional Parameters</h3>
+    <div class="flex1 flex-container flexFlowColumn">
+        <h4 data-i18n="Include Body Parameters">Include Body Parameters</h4>
+        <textarea id="custom_include_body" class="flex1" placeholder="Parameters to be included in the Chat Completion request body (YAML object)&#10;&#10;Example:&#10;top_k: 20&#10;repetition_penalty: 1.1" data-i18n="[placeholder]custom_include_body_desc"></textarea>
+    </div>
+    <div class="flex1 flex-container flexFlowColumn">
+        <h4 data-i18n="Exclude Body Parameters">Exclude Body Parameters</h4>
+        <textarea id="custom_exclude_body" class="flex1" placeholder="Parameters to be excluded from the Chat Completion request body (YAML array)&#10;&#10;Example:&#10;- frequency_penalty&#10;- presence_penalty" data-i18n="[placeholder]custom_exclude_body_desc"></textarea>
+    </div>
+    <div class="flex1 flex-container flexFlowColumn">
+        <h4 data-i18n="Include Request Headers">Include Request Headers</h4>
+        <textarea id="custom_include_headers" class="flex1" placeholder="Additional headers for Chat Completion requests (YAML object)&#10;&#10;Example:&#10;CustomHeader: custom-value&#10;AnotherHeader: custom-value" data-i18n="[placeholder]custom_include_headers_desc"></textarea>
+    </div>
+</div>`;
+    const $template = globalThis.jQuery(templateHtml);
+    $template.find('#custom_include_body').val(provider.customIncludeBody || '').on('input', function () {
+        provider.customIncludeBody = String(globalThis.jQuery(this).val() ?? '');
+        saveSettings();
+    });
+    $template.find('#custom_exclude_body').val(provider.customExcludeBody || '').on('input', function () {
+        provider.customExcludeBody = String(globalThis.jQuery(this).val() ?? '');
+        saveSettings();
+    });
+    $template.find('#custom_include_headers').val(provider.customIncludeHeaders || '').on('input', function () {
+        provider.customIncludeHeaders = String(globalThis.jQuery(this).val() ?? '');
+        saveSettings();
+    });
+    await callGenericPopup($template, POPUP_TYPE.TEXT, '', { wide: true, large: true });
 }
 
 function createDrawer() {
@@ -931,6 +967,20 @@ function createDrawer() {
     const customEndpointBlock = createFieldBlock('Custom Endpoint (Custom URL)', customEndpointInput);
     customEndpointBlock.id = 'auxiliary_model_custom_endpoint_block';
     grid.append(customEndpointBlock);
+
+    const flexDiv = createElement('div', {
+        classNames: ['flex-container', 'flex'],
+    });
+    const additionalParamsButton = createElement('div', {
+        id: 'auxiliary_customize_additional_parameters',
+        classNames: ['menu_button', 'menu_button_icon', 'auxiliary-model-field'],
+        text: 'Additional Parameters',
+        attributes: { 'data-source': 'custom', 'data-i18n': 'Additional Parameters' },
+    });
+    const additionalParamsBlock = createFieldBlock('Additional Parameters', additionalParamsButton);
+    additionalParamsBlock.id = 'auxiliary_model_additional_parameters_block';
+    flexDiv.append(additionalParamsBlock);
+    grid.append(flexDiv);
 
     const keyInput = createTextInput({
         id: 'auxiliary_model_api_key',
@@ -985,6 +1035,8 @@ function createDrawer() {
         }
         saveSettings();
     });
+
+    additionalParamsButton.addEventListener('click', onCustomizeAdditionalParametersClick);
 
     auxSource.addEventListener('change', () => {
         const nextSource = auxSource.value;

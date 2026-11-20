@@ -24,6 +24,14 @@ export function normalizeModels(response) {
     return [...unique.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
+export function normalizeCustomParameterText(value) {
+    if (typeof value !== 'string') return '';
+    return value
+        .replace(/\r\n?/g, '\n')
+        .replace(/[\u0000-\u0008\u000b-\u000c\u000e-\u001f\u007f-\u009f]/gu, '')
+        .trim();
+}
+
 export function normalizeCustomBaseUrl(value) {
     const input = cleanString(value);
     if (!/^https?:\/\//iu.test(input) || /[\s\\]/u.test(input)) return '';
@@ -48,5 +56,8 @@ export function normalizeProvider(value) {
         secretLabel: cleanString(provider.secretLabel),
         models: normalizeModels(provider.models),
         customUrl: normalizeCustomBaseUrl(provider.customUrl),
+        customIncludeBody: normalizeCustomParameterText(provider.customIncludeBody ?? provider.custom_include_body),
+        customExcludeBody: normalizeCustomParameterText(provider.customExcludeBody ?? provider.custom_exclude_body),
+        customIncludeHeaders: normalizeCustomParameterText(provider.customIncludeHeaders ?? provider.custom_include_headers),
     };
 }
